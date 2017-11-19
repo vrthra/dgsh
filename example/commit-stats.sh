@@ -2,7 +2,7 @@
 #
 # SYNOPSIS Git commit statistics
 # DESCRIPTION
-# Process the git history, and list the authors and days of the week
+# Process the Git history, and list the authors and days of the week
 # ordered by the number of their commits.
 # Demonstrates streams and piping through a function.
 #
@@ -31,14 +31,14 @@ forder()
 git log --format="%an:%ad" --date=default "$@" |
 tee |
 {{
-	echo "Authors ordered by number of commits" &
+	echo "Authors ordered by number of commits"
 	# Order by frequency
 	awk -F: '{print $1}' |
-	forder &
+	forder
 
-	echo "Days ordered by number of commits" &
+	echo "Days ordered by number of commits"
 	# Order by frequency
 	awk -F: '{print substr($2, 1, 3)}' |
-	forder &
+	forder
 }} |
 cat

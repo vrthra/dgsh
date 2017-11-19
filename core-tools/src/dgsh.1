@@ -1,0 +1,204 @@
+.TH DGSH 1 "10 August 2017"
+.\"
+.\" (C) Copyright 2016-2017 Diomidis Spinellis.  All rights reserved.
+.\"
+.\"  Licensed under the Apache License, Version 2.0 (the "License");
+.\"  you may not use this file except in compliance with the License.
+.\"  You may obtain a copy of the License at
+.\"
+.\"      http://www.apache.org/licenses/LICENSE-2.0
+.\"
+.\"  Unless required by applicable law or agreed to in writing, software
+.\"  distributed under the License is distributed on an "AS IS" BASIS,
+.\"  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+.\"  See the License for the specific language governing permissions and
+.\"  limitations under the License.
+.\"
+.SH NAME
+dgsh \- directed graph shell
+.SH SYNOPSIS
+\fBdgsh\fP
+[\fIbash_options\fP]
+[command_string | file]
+.SH DESCRIPTION
+\fIdgsh\fP is a modified version of \fIbash\fP
+that allows the specification of pipelines with non-linear non-uniform
+operations.
+These form a directed acyclic process graph, which is
+typically executed by multiple processor cores, thus increasing the
+operation's processing throughput.
+The \fIdgsh\fP command is equivalent to invoking the modified version of \fIbash\fP
+with the \fI--dgsh\fP argument in order to enable the \fIdgsh\fP-specific
+inter-process communication functionality.
+
+.SH INTER-PROCESS COMMUNICATION
+\fIDgsh\fP provides three new ways
+for expressing inter-process communication.
+.PP
+\fBMultipipes\fP are expressed as usual Unix pipelines,
+but can connect commands with more than one output or input channel.
+As an example, the \fIcomm\fP command supplied with \fIdgsh\fP
+expects two input channels and produces on its output three
+output channels: the lines appearing only in first (sorted) channel,
+the lines appearing only in the second channel,
+and the lines appearing in both.
+Connecting the output of the \fIcomm\fP command to the
+\fIcat\fP command supplied with \fIdgsh\fP
+will make the three outputs appear in sequence,
+while connecting it to the
+\fIpaste\fP command supplied with \fIdgsh\fP
+will make the output appear in its customary format.
+\fIDgsh\fP handles the following programs
+as being multipipe compatible:
+a) those that are linked with the \fIdgsh\fP library;
+b) scripts that include in their first line one of the strings
+\fCdgsh-wrap\fP, \fCenv dgsh\fP, or \fC--dgsh\fP;
+c) scripts whose second line starts with \fC#!dgsh\fP.
+.PP
+\fBMultipipe blocks\fP are enclosed within double braces: {{ ... }}.
+These
+a) send the input received on their input side to the asynchronously-running
+processes that reside within the block, and, b) pass the output
+produced by the processes within the block to their output side.
+Multipipe blocks typically receive input from more than one channel
+and produce more than one output channel.
+For example, a multipipe block that runs \fImd5sum\fP and \fIwc -c\fP
+receives two inputs and produces two outputs:
+the MD5 hash of its input and the input's size.
+Data to multipipe blocks are typically provided with an
+\fIdgsh\fP-aware version of \fItee\fP and collected by
+\fIdgsh\fP-aware versions of programs such as
+\fIcat\fP and \fIpaste\fP.
+.PP
+\fBStored values\fP offer a convenient way for communicating
+computed values between arbitrary processes on the graph.
+They allow the storage of a data stream's
+last record into a named buffer.
+This record can be later retrieved asynchronously by one or more readers.
+Data in a stored value can be piped into a process or out of it, or it can be read
+using the shell's command output substitution syntax.
+Stored values are implemented internally through Unix-domain sockets,
+a background-running store program, \fIdgsh-writeval\fP, and
+a reader program, \fIdgsh-readval\fP.
+The behavior of a stored value's IO can be modified by adding flags to
+\fIdgsh-writeval\fP and \fIdgsh-readval\fP.
+
+.SH SYNTAX EXTENSIONS
+The syntax of \fIbash\fP is extended by \fIdgsh\fP as follows.
+.PP
+.ft C
+.ps -1
+.nf
+<dgsh_block>     ::= '{{' <dgsh_list> '}}'
+
+<dgsh_list>      ::= <dgsh_list_item> '&'
+                 <dgsh_list_item> <dgsh_list>
+
+<dgsh_list_item> ::= <simple_command>
+                 <dgsh_block>
+                 <dgsh_list_item> '|' <dgsh_list_item>
+.fi
+.ps +1
+.ft P
+.br
+
+.SH EXAMPLES
+.PP
+Report file type, length, and compression performance for a
+URL retrieved from the web.  The web file never touches the
+disk.
+.ft C
+.ps -1
+.nf
+#!/usr/bin/env dgsh
+
+curl -s "$1" |
+tee |
+{{
+	echo -n 'File type:' &
+	file - &
+
+	echo -n 'Original size:' &
+	wc -c &
+
+	echo -n 'xz:' &
+	xz -c | wc -c &
+
+	echo -n 'bzip2:' &
+	bzip2 -c | wc -c &
+
+	echo -n 'gzip:' &
+	gzip -c | wc -c &
+}} |
+cat
+.fi
+.ps +1
+.ft P
+.PP
+List the names of duplicate files in the specified directory
+.ft C
+.ps -1
+.nf
+#!/usr/bin/env dgsh
+
+# Create list of files
+find "$@" -type f |
+
+# Produce lines of the form
+# MD5(filename)= 811bfd4b5974f39e986ddc037e1899e7
+xargs openssl md5 |
+
+# Convert each line into a "filename md5sum" pair
+sed 's/^MD5(//;s/)= / /' |
+
+# Sort by MD5 sum
+sort -k2 |
+
+tee |
+{{
+	# Print an MD5 sum for each file that appears more than once
+	awk '{print $2}' | uniq -d &
+
+	# Promote the stream to gather it
+	cat &
+}} |
+# Join the repeated MD5 sums with the corresponding file names
+# Join expects two inputs, second will come from scatter
+join -2 2 |
+.fi
+.ps +1
+.ft P
+.PP
+Check if the script is running under \fIdgsh\fP or regular \fIbash\fP (for polyglot scripts)
+.ft C
+.ps -1
+.nf
+if {{ : ; }} ; then
+    echo dgsh
+else
+    echo bash
+fi 2>/dev/null
+.fi
+.ps +1
+.ft P
+
+.SH "SEE ALSO"
+.BR dgsh-tee (1),
+.BR dgsh-wrap (1),
+.BR dgsh-writeval (1),
+.BR dgsh-readval (1),
+.BR dgsh-monitor (1)
+.BR dgsh-conc (1),
+.BR dgsh-httpval (1),
+.BR dgsh-merge-sum (1)
+
+.SH AUTHOR
+\fIDgsh\fP was designed by
+Diomidis Spinellis \(em <http://www.spinellis.gr> \(em
+and implemented by Marios Fragkoulis.
+The current design and capabilities of \fIdgsh\fP have been
+significantly influenced by amazing feedback generously provided by
+Doug McIlroy.
+
+.SH BUGS
+Report bugs through https://github.com/dspinellis/dgsh/issues.

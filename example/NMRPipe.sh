@@ -42,7 +42,7 @@ tee |
   nmrPipe -fn FT |
   nmrPipe -fn PS -p0 0 -p1 0 -di |
   nmrPipe -fn TP |
-  nmrPipe -fn POLY -auto -verb >A &
+  nmrPipe -fn POLY -auto -verb >A
 
   nmrPipe |
   nmrPipe -fn SOL |
@@ -58,12 +58,15 @@ tee |
   nmrPipe -fn FT |
   nmrPipe -fn PS -p0 -90 -p1 0 -di |
   nmrPipe -fn TP |
-  nmrPipe -fn POLY -auto -verb >B &
+  nmrPipe -fn POLY -auto -verb >B
 
 }}
 
 # We use temporary files rather than streams, because
 # addNMR mmaps its input files. The diagram displayed in the
 # example shows the notional data flow.
-addNMR -in1 A -in2 B -out A+B.dgsh.ft2 -c1 1.0 -c2 1.25 -add
-addNMR -in1 A -in2 B -out A-B.dgsh.ft2 -c1 1.0 -c2 1.25 -sub
+if [ -z "${DGSH_DRAW_EXIT}" ]
+then
+	addNMR -in1 A -in2 B -out A+B.dgsh.ft2 -c1 1.0 -c2 1.25 -add
+	addNMR -in1 A -in2 B -out A-B.dgsh.ft2 -c1 1.0 -c2 1.25 -sub
+fi

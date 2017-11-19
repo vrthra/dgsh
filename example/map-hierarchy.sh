@@ -25,7 +25,7 @@
 #  limitations under the License.
 #
 
-if [ ! -d "$1" -o ! -d "$2" -o -z "$3" ]
+if [ -z "${DGSH_DRAW_EXIT}" -a \( ! -d "$1" -o ! -d "$2" -o -z "$3" \) ]
 then
   echo "Usage: $0 dir-1 dir-2 new-dir-name" 1>&2
   exit 1
@@ -57,8 +57,8 @@ export -f line_signatures
 
 {{
   # Generate the signatures for the two hierarchies
-  call 'line_signatures "$1"' -- "$1" &
-  call 'line_signatures "$1"' -- "$2" &
+  call 'line_signatures "$1"' -- "$1"
+  call 'line_signatures "$1"' -- "$2"
 }} |
 
 # Join signatures on file name and content
@@ -74,9 +74,9 @@ tee |
 {{
   # Commands to copy
   awk '{print "mkdir -p '$NEWDIR'/" $3 ""}' |
-  sort -u &
+  sort -u
 
-  awk '{print "cp " $2 "/" $1 " '$NEWDIR'/" $3 "/" $1 ""}' &
+  awk '{print "cp " $2 "/" $1 " '$NEWDIR'/" $3 "/" $1 ""}'
 }} |
 # Order: first make directories, then copy files
 # TODO: dgsh-tee does not pass along first incoming stream

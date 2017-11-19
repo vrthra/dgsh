@@ -18,9 +18,10 @@
 export PREFIX?=/usr/local
 
 ifdef DEBUG
-CFLAGS=-g -DDEBUG -Wall
+CPPFLAGS=-DDEBUG
+CXXFLAGS=-g -Wall -O0
 else
-CFLAGS=-O -Wall
+CXXFLAGS=-O -Wall
 endif
 
 ifdef TIME
@@ -29,188 +30,144 @@ endif
 
 DOTFLAGS=-Nfontname=Arial -Ngradientangle=90 -Nstyle=filled -Nshape=ellipse -Nfillcolor=yellow:white
 
-EXECUTABLES=dgsh-monitor dgsh-httpval dgsh dgsh-readval
-
-LIBEXECUTABLES=dgsh-tee dgsh-parallel dgsh-writeval dgsh-monitor \
-	dgsh-conc dgsh-wrap perm dgsh-merge-sum
-
-LIBS=libdgsh_negotiate.a
-
-TOOLS=unix-dgsh-tools
-
 # Manual pages
-MANSRC=$(wildcard *.1)
-MANPDF=$(patsubst %.1,%.pdf,$(MANSRC))
-MANHTML=$(patsubst %.1,%.html,$(MANSRC))
+MAN1SRC=$(wildcard core-tools/src/*.1)
+MANPDF=$(patsubst %.1,%.pdf,$(MAN1SRC)) core-tools/src/dgsh_negotiate.pdf
+MANHTML=$(patsubst %.1,%.html,$(MAN1SRC)) core-tools/src/dgsh_negotiate.html
 
 # Web files
 EXAMPLES=$(patsubst example/%,%,$(wildcard example/*.sh))
 EGPNG=$(patsubst %.sh,png/%-pretty.png,$(EXAMPLES))
+EGDOT=$(patsubst %.sh,graphdot/%.dot,$(EXAMPLES))
 WEBPNG=$(EGPNG)
 WEBDIST=../../../pubs/web/home/sw/dgsh/
 
-# Files required for dgsh negotiation
-NEGOTIATE_TEST_FILES=dgsh.h dgsh-negotiate.h negotiate.c dgsh-internal-api.h \
-		     dgsh-conc.c
-
 png/%-pretty.png: graphdot/%.dot
-	mkdir -p graphdot
-	dot $(DOTFLAGS) -Tpng $< >$@
-
+	gvpr 'BEG_G { graph_t L = cloneG($$G,"last")} END {write(L)}' $< | \
+	dot $(DOTFLAGS) -Tpng >$@
 
 %.pdf: %.1
+	groff -man -Tps $< | ps2pdf - $@
+
+%.pdf: %.3
 	groff -man -Tps $< | ps2pdf - $@
 
 %.html: %.1
 	groff -man -Thtml $< >$@
 
+%.html: %.3
+	groff -man -Thtml $< >$@
+
 graphdot/%.dot: example/%.sh
-	DRAW_EXIT=1 DGSH_DOT_DRAW=graphdot/$* ./unix-dgsh-tools/bash/bash --dgsh $<
+	mkdir -p graphdot
+	rm -f graphdot/$*.dot
+	DGSH_DRAW_EXIT=1 DGSH_DOT_DRAW=graphdot/$* ./unix-tools/bash/bash --dgsh $<
 
-all: $(EXECUTABLES) $(LIBEXECUTABLES) $(LIBS) tools
+.PHONY: all tools core-tools unix-tools export-prefix \
+	config config-core-tools \
+	test test-dgsh test-merge-sum test-tee test-negotiate \
+	test-unix-tools test-wrap test-kvstore \
+	clean install webfiles dist pull commit uninstall dotfiles
 
-tools:
-	$(MAKE) -C $(TOOLS) make MAKEFLAGS=
+all: tools
 
-config:
+tools: core-tools unix-tools
+
+core-tools:
+	$(MAKE) -C core-tools CFLAGS="$(CFLAGS)"
+	cd core-tools/src && $(MAKE) build-install
+
+unix-tools: core-tools
+	$(MAKE) -C unix-tools make MAKEFLAGS=
+	$(MAKE) -C unix-tools build-install
+
+export-prefix:
 	echo "export PREFIX?=$(PREFIX)" >.config
-	$(MAKE) -C $(TOOLS) configure
 
-dgsh-readval: dgsh-readval.c kvstore.c negotiate.o
+config: export-prefix config-core-tools
+	$(MAKE) -C unix-tools configure
 
-dgsh-writeval: dgsh-writeval.c negotiate.o
-
-dgsh-httpval: dgsh-httpval.c kvstore.c
-
-dgsh-conc: dgsh-conc.o negotiate.o
-
-dgsh-wrap: dgsh-wrap.o negotiate.o
-
-dgsh-tee: dgsh-tee.o negotiate.o
-
-dgsh-parallel: dgsh-parallel.sh
-
-dgsh: dgsh.sh
-	./replace-paths.sh <$? >$@
-
-perm: perm.sh
-	./replace-paths.sh <$? >$@
-
-dgsh-merge-sum: dgsh-merge-sum.pl
-	./replace-paths.sh <$? >$@
-
-test-dgsh: $(EXECUTABLES) $(LIBEXECUTABLES)
-	./test-dgsh.sh
-
-test-tee: dgsh-tee charcount test-tee.sh
-	./test-tee.sh
-
-test-negotiate: copy_files build-run-ng-tests test-tools
-
-setup-test-negotiate: copy_files autoreconf-ng-tests
-
-copy_files: $(NEGOTIATE_TEST_FILES) test/negotiate/tests/check_negotiate.c
-	cp $(NEGOTIATE_TEST_FILES) test/negotiate/src/
-
-autoreconf-ng-tests: test/negotiate/configure.ac test/negotiate/Makefile.am test/negotiate/src/Makefile.am test/negotiate/tests/Makefile.am
-	-mkdir test/negotiate/m4
-	cd test/negotiate && \
+config-core-tools: core-tools/configure.ac core-tools/Makefile.am core-tools/src/Makefile.am core-tools/tests/Makefile.am
+	-mkdir core-tools/m4
+	cd core-tools && \
 	autoreconf --install && \
-	./configure && \
+	./configure --prefix=$(PREFIX) \
+	--bindir=$(PREFIX)/bin && \
 	cd tests && \
 	patch Makefile <Makefile.patch
 
-build-run-ng-tests:
-	cd test/negotiate && \
+test: test-negotiate test-tee test-kvstore test-unix-tools test-merge-sum test-wrap test-dgsh
+
+test-dgsh: tools
+	cd core-tools/tests-regression && ./test-dgsh.sh
+
+test-wrap: tools
+	cd core-tools/tests-regression && ./test-wrap.sh
+
+test-merge-sum:
+	cd core-tools/tests-regression && ./test-merge-sum.sh
+
+test-tee: tools
+	cd core-tools/tests-regression && ./test-tee.sh
+
+test-negotiate: tools
+	cd core-tools/tests && \
 	$(MAKE) && \
 	$(MAKE) check
 
-test-tools:
-	$(MAKE) -C $(TOOLS) -s test
+test-unix-tools: tools
+	$(MAKE) -C unix-tools -s test
 
-test-kvstore: test-kvstore.sh
-	# Make versions that will exercise the buffers
-	$(MAKE) clean
-	$(MAKE) DEBUG=1
-	./test-kvstore.sh
-	# Remove the debug build versions
-	$(MAKE) clean
+test-kvstore: core-tools
+	cd core-tools/tests-regression && ./test-kvstore.sh
 
-libdgsh_negotiate.a: negotiate.c
-	ar rcs $@ negotiate.o
+clean:
+	rm -rf build $(MANPDF) $(MANHTML) $(EGPNG)
+	$(MAKE) -C core-tools clean
+	$(MAKE) -C unix-tools clean
 
-charcount: charcount.sh
-	install charcount.sh charcount
+install:
+	-rm -r build
+	$(MAKE) -C core-tools install
+	$(MAKE) -C unix-tools install
 
-# Regression test based on generated output files
-test-regression:
-	# Sort files by size to get the easiest problems first
-	# Generated dot graphs
-	for i in `ls -rS example/*.sh` ; do \
-		perl dgsh.pl -g plain $$i >test/regression/graphs/`basename $$i .sh`.test ; \
-		diff -b test/regression/graphs/`basename $$i .sh`.* || exit 1 ; \
-	done
-	# Generated code
-	for i in `ls -rS example/*.sh` ; do \
-		perl dgsh.pl -o - $$i >test/regression/scripts/`basename $$i .sh`.test ; \
-		diff -b test/regression/scripts/`basename $$i .sh`.* || exit 1 ; \
-	done
-	# Error messages
-	for i in test/regression/errors/*.sh ; do \
-		! /usr/bin/perl dgsh.pl -o /dev/null $$i 2>test/regression/errors/`basename $$i .sh`.test || exit 1; \
-		diff -b test/regression/errors/`basename $$i .sh`.{ok,test} || exit 1 ; \
-	done
-	# Warning messages
-	for i in test/regression/warnings/*.sh ; do \
-		/usr/bin/perl dgsh.pl -o /dev/null $$i 2>test/regression/warnings/`basename $$i .sh`.test || exit 1; \
-		diff -b test/regression/warnings/`basename $$i .sh`.{ok,test} || exit 1 ; \
-	done
+webfiles: $(MANPDF) $(MANHTML) $(WEBPNG)
 
-# Seed the regression test data
-seed-regression:
-	for i in example/*.sh ; do \
-		echo $$i ; \
-		/usr/bin/perl dgsh.pl -o - $$i >test/regression/scripts/`basename $$i .sh`.ok ; \
-		/usr/bin/perl dgsh.pl -g plain $$i >test/regression/graphs/`basename $$i .sh`.ok ; \
-	done
-	for i in test/regression/errors/*.sh ; do \
-		echo $$i ; \
-		! /usr/bin/perl dgsh.pl -o /dev/null $$i 2>test/regression/errors/`basename $$i .sh`.ok ; \
-	done
-	for i in test/regression/warnings/*.sh ; do \
-		echo $$i ; \
-		/usr/bin/perl dgsh.pl -o /dev/null $$i 2>test/regression/warnings/`basename $$i .sh`.ok ; \
-	done
-
-clean: clean-dgsh clean-tools
-
-clean-dgsh:
-	rm -f *.o *.exe *.a $(EXECUTABLES) $(LIBEXECUTABLES) $(MANPDF) \
-		$(MANHTML) $(EGPNG)
-
-clean-tools:
-	$(MAKE) -C $(TOOLS) clean
-
-install: install-dgsh install-tools
-
-install-dgsh: $(EXECUTABLES) $(LIBEXECUTABLES) $(LIBS)
-	-mkdir -p $(DESTDIR)$(PREFIX)/bin
-	-mkdir -p $(DESTDIR)$(PREFIX)/lib
-	-mkdir -p $(DESTDIR)$(PREFIX)/libexec/dgsh
-	-mkdir -p $(DESTDIR)$(PREFIX)/share/man/man1
-	install $(EXECUTABLES) $(DESTDIR)$(PREFIX)/bin
-	install $(LIBEXECUTABLES) $(DESTDIR)$(PREFIX)/libexec/dgsh
-	install $(LIBS) $(DESTDIR)$(PREFIX)/lib
-	install -m 644 $(MANSRC) $(DESTDIR)$(PREFIX)/share/man/man1
-
-install-tools:
-	$(MAKE) -C $(TOOLS) install
-
-web: $(MANPDF) $(MANHTML) $(WEBPNG)
-	perl -n -e 'if (/^<!-- #!(.*) -->/) { system("$$1"); } else { print; }' index.html >$(WEBDIST)/index.html
+# Create web page
+dist: $(MANPDF) $(MANHTML) $(WEBPNG)
+	perl -n -e 'if (/^<!-- #!(.*) -->/) { system("$$1"); } else { print; }' web/index.html >$(WEBDIST)/index.html
 	cp $(MANHTML) $(MANPDF) $(WEBDIST)
 	cp $(WEBPNG) $(WEBDIST)
 
+# Obtain dot files from Unix host
+rsync-graphdot:
+	ssh stereo 'cd src/dgsh && git pull && make webfiles'
+	rsync -a stereo:src/dgsh/graphdot/ graphdot/
+	rsync -a stereo:src/dgsh/example/ example/
+
+dotfiles: $(EGDOT)
+
 pull:
 	git pull
-	git submodule update --recursive --remote
+	# Pull master on all sub-repositories.
+	# Note that the gnulib ones get detached by by builds specifying
+	# a specific gnulib version.  Through this pull repos on master
+	# stay on master; detached repos (gnulib) stay in the version they
+	# were detached.
+	git submodule status --recursive | awk '{print $$2}' | sort -r | while read d ; do ( echo "Pulling $$d" && cd $$d && old=$$(if [ $$(git rev-parse master) = $$(git rev-parse HEAD) ] ; then echo master ; else git rev-parse HEAD ; fi)  && git checkout master && git pull && git checkout -q $$old ) ; done
+
+push:
+	git push --recurse-submodules=on-demand
+
+commit:
+	# Commit -a including submodules
+	printf '\n\n# Please enter the commit message for your changes.\n#\n' >.git/COMMIT_EDITMSG
+	git status --ignore-submodules=untracked | sed '/./s/^/# /;s/^$$/#/' >>.git/COMMIT_EDITMSG
+	$${VISUAL-vi} .git/COMMIT_EDITMSG
+	for i in $$(echo unix-tools/*/.git | sed 's/\.git//g') . ; do grep -v '^#' .git/COMMIT_EDITMSG | (cd $$i && git commit -a -F -) ; done
+	rm -f .git/COMMIT_EDITMSG
+
+# Rough uninstall rule to verify that tests pick up correct files
+uninstall:
+	rm -rf $(PREFIX)/bin/dgsh-* $(PREFIX)/libexec/dgsh \
+		$(PREFIX)/lib/libdgsh.a

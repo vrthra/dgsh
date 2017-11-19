@@ -1,8 +1,8 @@
 #!/usr/bin/env dgsh
 #
-# SYNOPSIS Plot git committer activity over time
+# SYNOPSIS Plot Git committer activity over time
 # DESCRIPTION
-# Process the git history, and create two PNG diagrams depicting
+# Process the Git history, and create two PNG diagrams depicting
 # committer activity over time. The most active committers appear
 # at the center vertical of the diagram.
 # Demonstrates image processing, mixining of synchronous and
@@ -27,7 +27,7 @@
 # Commit history in the form of ascending Unix timestamps, emails
 git log --pretty=tformat:'%at %ae' |
 # Filter records according to timestamp: keep (100000, now) seconds
-awk 'NF == 2 && $1 > 100000 && $1 < '`date +%s` |
+awk 'NF == 2& $1 > 100000& $1 < '`date +%s` |
 sort -n |
 tee |
 {{
@@ -38,30 +38,30 @@ tee |
 		wc -l |
 		tee |
 		{{
-			dgsh-writeval -s committers1 &
+			dgsh-writeval -s committers1
 
-			dgsh-writeval -s committers2 &
-			dgsh-writeval -s committers3 &
-		}} &
+			dgsh-writeval -s committers2
+			dgsh-writeval -s committers3
+		}}
 
 		# Calculate last commit timestamp in seconds
 		tail -1 |
-		awk '{print $1}' &
+		awk '{print $1}'
 
 		# Calculate first commit timestamp in seconds
 		head -1 |
-		awk '{print $1}' &
+		awk '{print $1}'
 	}} |
 	# Gather last and first commit timestamp
-	tee |
+	cat |
 	# Make one space-delimeted record
 	tr '\n' ' ' |
 	# Compute the difference in days
 	awk '{print int(($1 - $2) / 60 / 60 / 24)}' |
 	# Store number of days
-	dgsh-writeval -s days &
+	dgsh-writeval -s days
 
-	sort -k2 &	# <timestamp, email>
+	sort -k2	# <timestamp, email>
 
 	# Place committers left/right of the median
 	# according to the number of their commits
@@ -74,7 +74,7 @@ tee |
 			"dgsh-readval -l -x -q -s committers1" | getline NCOMMITTERS
 			l = 0; r = NCOMMITTERS;}
 		{print NR % 2 ? l++ : --r, $2}' |
-	sort -k2 &	# <left/right, email>
+	sort -k2	# <left/right, email>
 
 }} |
 # Join committer positions with commit time stamps
@@ -85,35 +85,39 @@ sort -k 2n |
 tee |
 {{
 	# Create portable bitmap
-	echo 'P1' &
+	echo 'P1'
 
 	{{
-		dgsh-readval -l -q -s committers2 &
-		dgsh-readval -l -q -s days &
+		dgsh-readval -l -q -s committers2
+		dgsh-readval -l -q -s days
 	}} |
 	cat |
 	tr '\n' ' ' |
-	awk '{print $1, $2}' &
+	awk '{print $1, $2}'
 
 	perl -na -e '
-	BEGIN { open(my $ncf, "-|", "dgsh-readval -l -x -q -s committers3");
-		$ncommitters = <$ncf>;
-		@empty[$ncommitters - 1] = 0; @committers = @empty; }
-		sub out { print join("", map($_ ? "1" : "0", @committers)), "\n"; }
+	  BEGIN {
+	    open(my $ncf, "-|", "dgsh-readval -l -x -q -s committers3");
+	    $ncommitters = <$ncf>;
+	    @empty[$ncommitters - 1] = 0; @committers = @empty;
+	  }
+	  sub out {
+		  print join("", map($_ ? "1" : "0", @committers)), "\n";
+	  }
 
-		$day = int($F[1] / 60 / 60 / 24);
-		$pday = $day if (!defined($pday));
+	  $day = int($F[1] / 60 / 60 / 24);
+	  $pday = $day if (!defined($pday));
 
-		while ($day != $pday) {
-			out();
-			@committers = @empty;
-			$pday++;
-		}
+	  while ($day != $pday) {
+		  out();
+		  @committers = @empty;
+		  $pday++;
+	  }
 
-		$committers[$F[2]] = 1;
+	  $committers[$F[2]] = 1;
 
-		END { out(); }
-		' &
+	  END { out(); }
+	'
 }} |
 cat |
 # Enlarge points into discs through morphological convolution
@@ -133,11 +137,8 @@ EOF
 tee |
 {{
 	# Full-scale image
-	pnmtopng >large.png &
+	pnmtopng >large.png
 	# A smaller image
 	pamscale -width 640 |
-	pnmtopng >small.png &
+	pnmtopng >small.png
 }}
-
-# Close dgsh-writeval
-#dgsh-readval -l -x -q -s committers

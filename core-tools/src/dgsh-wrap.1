@@ -1,0 +1,237 @@
+.TH DGSH-WRAP 1 "18 August 2017"
+.\"
+.\" (C) Copyright 2016-2017 Diomidis Spinellis.  All rights reserved.
+.\"
+.\"  Licensed under the Apache License, Version 2.0 (the "License");
+.\"  you may not use this file except in compliance with the License.
+.\"  You may obtain a copy of the License at
+.\"
+.\"      http://www.apache.org/licenses/LICENSE-2.0
+.\"
+.\"  Unless required by applicable law or agreed to in writing, software
+.\"  distributed under the License is distributed on an "AS IS" BASIS,
+.\"  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+.\"  See the License for the specific language governing permissions and
+.\"  limitations under the License.
+.\"
+.SH NAME
+dgsh-wrap \- allow any program to participate in an dgsh pipeline
+.SH SYNOPSIS
+\fBdgsh-wrap\fP
+[\fB-S\fP]
+[\fB-i\fP \fB0\fP|\fBa\fP]
+[\fB-o\fP \fB0\fP|\fBa\fP]
+[\fB-eIO\fP]
+\fIprogram\fP [\fIprogram-arguments\fP ...]
+
+#!/usr/libexec/dgsh/\fBdgsh-wrap\fP
+\fB-s\fP
+[\fB-i\fP \fB0\fP|\fBa\fP]
+[\fB-o\fP \fB0\fP|\fBa\fP]
+[\fB-eIO\fP] [\fIprogram-arguments\fP ...]
+
+\fBdgsh-wrap\fP
+[\fB-Ss\fP]
+\fB-x\fP
+\fIprogram\fP [\fIprogram-arguments\fP ...]
+
+.SH DESCRIPTION
+\fIdgsh-wrap\fP takes as arguments an absolute path or the name
+of a program to execute and its arguments.
+It will participate in the \fIdgsh\fP negotiation process,
+and then execute the specified program connected to the negotiated
+input and output pipes.
+If the program is not specified through an absolute path,
+it will be executed by searching the existing path,
+excluding from it elements ending in \fIdgsh\fP
+(where programs already wrapped with \fIdgsh-wrap\fP may reside).
+.PP
+Arguments specified as \fI<|\fP are presented as additional
+input channels and
+arguments specified as \fI>|\fP are presented as additional
+output channels.
+Both are suitably replaced by named file descriptor paths
+when the command is invoked.
+.PP
+In the context of a \fIdgsh\fP process graph, \fIdgsh(1)\fP automatically
+invokes \fIdgsh-wrap\fP to allow non-dgsh compatible commands to participate
+in the negotiation procedure.
+Furthermore, the \fIdgsh\fP installation process sets up many POSIX programs
+wrapped with \fIdgsh-wrap\fP in order to communicate their particular
+I/O requirements.
+
+.SH OPTIONS
+.IP "\fB\-e\fP
+Replace \fI<|\fP and \fI>|\fP strings embedded within arguments,
+with names of input file descriptor paths.
+By default, only standalone arguments are thus replaced.
+
+.IP "\fB\-i\fP \fB0\fP|\fBa\fP
+Specify the wrapped program's number of input channels.
+The \fB0\fP character specifies that the program does not read any input.
+The \fBa\fP character specifies that the program can read an arbitrary
+number of input streams;
+these will be automatically supplied by \fIdgsh-wrap\fP as file descriptor
+command line arguments.
+
+.IP "\fB\-I\fP
+Do not include the standard input to the command line arguments,
+when replacing \fI<|\fP arguments with names of input file descriptor paths.
+This will result in the standard input becoming available to the
+command as its standard input, rather than as a command line argument.
+Without this option, the first path with be \fI/dev/fd/0\fP.
+When this option is given, the program will require one input channel
+more than those specified by the \fI<|\fP arguments.
+
+.IP "\fB\-o\fP \fB0\fP|\fBa\fP
+Specify the wrapped program's number of output channels.
+The \fB0\fP character specifies that the program does not produce any output.
+The \fBa\fP character specifies that the program can write to an arbitrary
+number of output streams;
+these will be automatically supplied by \fIdgsh-wrap\fP as file descriptor
+command line arguments.
+
+.IP "\fB\-O\fP
+Do not include the standard output to the command line arguments,
+when replacing \fI>|\fP arguments with names of output file descriptor paths.
+This will result in the standard output becoming available to the
+command as its standard output, rather than as a command line argument.
+Without this option the first path with be \fI/dev/fd/1\fP.
+When this option is given, the program will require one output channel
+more than those specified by the \fI>|\fP arguments.
+
+.IP "\fB\-S\fP
+Process flags as a shebang-invoked (\fI#!\fP) interpreter using
+an invocation-supplied program name.
+This will change the argument processing in two ways.
+First, it will cause the arguments being specified on the shebang line to
+be properly parsed as separate arguments by splitting them on whitespace.
+(Most operating systems pass any of the line's arguments as a single
+string to the process.)
+Second, it will remove from the arguments the kernel-supplied path
+to the script that invoked \fIdgsh-wrap\fP.
+(The script path is not needed,
+because the program to wrap is specified as an argument.)
+If this flag is specified, it must be the first command-line argument.
+
+.IP "\fB\-s\fP
+Process flags as a shebang-invoked (\fI#!\fP) interpreter using an
+operating system-supplied program name.
+This will change the argument processing in two ways.
+First, it will split arguments in the shebang line, in the same
+way as the \fI-S\fP flag.
+Second, it will convert the kernel-supplied absolute path
+to the script that invoked \fIdgsh-wrap\fP, into a command name.
+If the name of the script is the same as the name of a command to
+be wrapped, this path can be used to derive the name of the program to execute,
+thus removing the need to supply the name of the program in the
+invocation line.
+
+.IP "\fB\-x\fP
+Execute the specified command and arguments, without performing \fIdgsh\fP
+negotiation on its behalf.
+This is useful when
+the specified command, \fIA\fP, is not \fIdgsh\fP-compatible,
+but it will in turn execute, \fIB\fP,  a \fIdgsh\fP-compatible command.
+With this flag the \fIdgsh\fP will recognize the invocation of \fIA\fP
+as an invocation of a \fIdgsh\fP-compatible command (due to the wrapping),
+and will not attempt to autowrap it as a filter and thereby override a
+more sophisticated \fIdgsh\fP interface that \fIB\fP would present.
+
+.SH EXAMPLES
+.PP
+The following examples are given only to illustrate the command's functionality.
+Note that most of the wrappings shown here are either performed automatically
+or are not required,
+because corresponding commands with built-in \fIdgsh\fP support
+are already provided.
+.PP
+Wrap the \fIecho\fP command, specifying that it accepts no input.
+.ft C
+.ps -1
+.nf
+dgsh-wrap -i 0 echo hi
+.fi
+.ps +1
+.ft P
+.PP
+Wrap the \fIcp\fP command, specifying that it does not perform any I/O.
+.ft C
+.ps -1
+.nf
+dgsh-wrap -i 0 -o 0 cp src-file dest-file
+.fi
+.ps +1
+.ft P
+.PP
+Wrap the \fIpaste\fP command, supplying its two arguments.
+.ft C
+.ps -1
+.nf
+dgsh-wrap /usr/bin/paste "<|" "<|"
+.fi
+.ps +1
+.ft P
+.PP
+Wrap the \fIpaste\fP command, with an invocation that processes the standard
+input and uses an additional input argument.
+.ft C
+.ps -1
+.nf
+dgsh-wrap -I /usr/bin/paste - "<|"
+.fi
+.ps +1
+.ft P
+.PP
+Wrap the \fIpaste\fP command, so that it will process all input channels
+provided to it.
+.ft C
+.ps -1
+.nf
+dgsh-wrap -i a /usr/bin/paste
+.fi
+.ps +1
+.ft P
+.PP
+A wrapped version of the \fIuname\fP command can be created with an
+interpreter invocation file containing just the following line.
+In contrast to a shell script, no shell is ever launched.
+.ft C
+.ps -1
+.nf
+#!/usr/libexec/dgsh/dgsh-wrap -S -d /bin/uname
+.fi
+.ps +1
+.ft P
+.PP
+Even simpler, a wrapped version of the \fIuname\fP command can be created
+if
+a) the interpreter invocation file is named \fIuname\fP,
+b) it resides in a directory named \fIdgsh\fP (so that it will be excluded
+from the subsequently used search path), and
+c) it contains the following line.
+.ft C
+.ps -1
+.nf
+#!/usr/libexec/dgsh/dgsh-wrap -s  -d
+.fi
+.ps +1
+.ft P
+.PP
+Trace the invocation of the \fItee\fP command,
+presenting to the shell \fIsrtace\fP as a \fIdgsh\fP-compatible command
+with the capabilities of \fItee\fP.
+.ft C
+.ps -1
+.nf
+dgsh-wrap -x strace tee
+.fi
+.ps +1
+.ft P
+
+.SH "SEE ALSO"
+\fIdgsh\fP(1),
+\fIdgsh-negotiate\fP(3)
+
+.SH AUTHOR
+Diomidis Spinellis \(em <http://www.spinellis.gr>

@@ -52,23 +52,23 @@ ngram()
 export -f ranked_frequency
 export -f ngram
 
-tee <$1 |
+tee |
 {{
 	# Split input one word per line
 	tr -cs a-zA-Z \\n |
 	tee |
 	{{
 		# Digram frequency
-		call 'ngram 2 >digram.txt' &
+		call 'ngram 2 >digram.txt'
 		# Trigram frequency
-		call 'ngram 3 >trigram.txt' &
+		call 'ngram 3 >trigram.txt'
 		# Word frequency
-		call 'ranked_frequency >words.txt' &
-	}} &
+		call 'ranked_frequency >words.txt'
+	}}
 
 	# Store number of characters to use in awk below
 	wc -c |
-	dgsh-writeval -s nchars &
+	dgsh-writeval -s nchars
 
 	# Character frequency
 	sed 's/./&\
@@ -78,5 +78,5 @@ tee <$1 |
 	awk 'BEGIN {
 		"dgsh-readval -l -x -q -s nchars" | getline NCHARS
 		OFMT = "%.2g%%"}
-		{print $1, $2, $1 / NCHARS * 100}' > character.txt &
+		{print $1, $2, $1 / NCHARS * 100}' > character.txt
 }}

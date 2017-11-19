@@ -1,0 +1,85 @@
+# Commands specified by POSIX
+d alias
+d ar
+d basename
+dm bg
+d c99
+d cal
+c cat
+dm cd
+d cflow
+dm chgrp
+dm chmod
+dm chown
+D cksum
+c cmp
+c comm
+d command
+f compress	# TODO custom
+dm cp
+f crontab	# TODO custom
+f csplit	# TODO custom
+f ctags		# TODO custom
+d date
+d df
+c diff
+d dirname
+d du
+d echo
+dm env
+d expr
+dm false
+dm fg
+d find
+d getopts
+c grep
+d ipcrm
+d jobs
+c join
+dm kill
+dm link
+dm ln
+d ls
+d make
+d man
+dm mesg
+dm mkdir
+dm mkfifo
+dm mv
+dm newgrp
+dm nice
+dm nohup
+c paste
+d printf
+d ps
+d pwd
+m read
+dm renice
+dm rm
+D rmdel		# SCCS
+dm rmdir
+dm sleep
+c sort
+f strings	# TODO custom
+dm strip
+c tee
+dm test
+f time		# Depends on the command
+dm touch
+dm true
+f tsort
+d tty
+d type
+d ulimit
+d umask
+dm unalias
+d uname
+f uncompress	# TODO custom
+Dm unget
+dm unlink
+D val		# SCCS
+dm wait
+d what		# SCCS
+d who
+m write
+dm yacc

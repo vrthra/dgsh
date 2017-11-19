@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-type" content="text/html; charset=utf-8" />
+<title>dgsh &mdash; directed graph shell</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<!-- Bootstrap -->
+<link href="../../a/bootstrap/css/bootstrap.min.css" rel="stylesheet" />
+<link href="../../a/bootstrap/css/bootstrap-responsive.min.css" rel="stylesheet" />
+<link href="../../a/prettify/prettify.css" type="text/css" rel="stylesheet" />
+<link href="../../a/dds-bstyle.css" rel="stylesheet" />
+</head>
+<body data-spy="scroll" data-target="#sidemenu">
+
+<div class="top">dgsh dds</div>
+<div class="row">
+    <div class="span4" id="sidemenu" >
+    <ul class="nav nav-list sidenav" data-spy="affix">
+    <li ><a href="#intro">Introduction</a></li>
+	<li>
+	<ul class="nav nav-list">
+	<li ><a href="#ipc">IPC</a></li>
+	<li ><a href="#syntax">Syntax</a></li>
+	<li ><a href="#tools">Adapted tools</a></li>
+	</ul>
+	</li>
+    <li ><a href="#download">Downloading and installation</a></li>
+	<li>
+	<ul class="nav nav-list">
+    	<li ><a href="#debian">Debian and Ubuntu</a></li>
+    	<li ><a href="#freebsd">FreeBSD</a></li>
+	</ul>
+	</li>
+    <li ><a href="#reference">Reference</a></li>
+    <li><a href="#examples">Examples</a></li>
+	<li>
+	<ul class="nav nav-list">
+<!-- #!sh web/format-eg.sh -c -->
+	</ul>
+	</li>
+    </ul>
+    </div> <!-- span4 -->
+    <div class="span8">
+
+<!-- About {{{1
+================================================== -->
+<section id="intro">
+  <div class="page-header">
+    <h1>dgsh &mdash; directed graph shell</h1>
+  </div>
+<p>
+The directed graph shell, <em>dgsh</em>
+(<a href="https://en.wiktionary.org/wiki/Appendix:English_pronunciation">pronounced</a> /dæɡʃ/ &mdash; <em>dagsh</em>),
+provides an expressive way to construct
+sophisticated and efficient big data set and stream processing pipelines
+using existing Unix tools as well as custom-built components.
+It is a Unix-style shell (based on <em>bash</em>)
+allowing the specification of pipelines
+with non-linear non-uniform operations.
+These form a directed acyclic process graph,
+which is typically executed by multiple processor cores,
+thus increasing the operation's processing throughput.
+</p>
+<p>
+If you want to get a feeling on how <em>dgsh</em> works in practice,
+skip right down to the <a href="#examples">examples</a> section.
+</p>
+<p>
+For a more formal introduction to <em>dgsh</em> or to cite it in your work,
+see:<br />
+Diomidis Spinellis and Marios Fragkoulis.
+<a href="http://dx.doi.org/10.1109%2FTC.2017.2695447">Extending Unix Pipelines to DAGs</a>.
+<em>IEEE Transactions on Computers</em>, 2017.
+doi: 10.1109/TC.2017.2695447
+</p>
+</section> <!-- Introduction -->
+
+<section id="ipc"> <!-- {{{2 -->
+<h2>Inter-process communication</h2>
+<p>
+<em>Dgsh</em> provides two new ways
+for expressing inter-process communication.
+
+</p>
+<dl class="dl-horizontal">
+<dt>Multipipes</dt><dd> are expressed as usual Unix pipelines,
+but can connect commands with more than one output or input channel.
+As an example, the <code>comm</code> command supplied with <em>dgsh</em>
+expects two input channels and produces on its output three
+output channels: the lines appearing only in first (sorted) channel,
+the lines appearing only in the second channel,
+and the lines appearing in both.
+Connecting the output of the <code>comm</code> command to the
+<code>cat</code> command supplied with <em>dgsh</em>
+will make the three outputs appear in sequence,
+while connecting it to the
+<code>paste</code> command supplied with <em>dgsh</em>
+will make the output appear in its customary format.
+</dd>
+
+<dt>Multipipe blocks {{ ... }}</dt><dd>
+a) send (multiple) input streams
+received on their input side to the asynchronously-running
+processes that reside within the block, and,
+b) pass the output produced by the processes within the block as
+(multiple) streams on their output side.
+Multipipe blocks typically receive input from more than one channel
+and produce more than one output channel.
+For example, a multipipe block that runs <code>md5sum</code> and <code>wc -c</code>
+receives two inputs and produces two outputs:
+the MD5 hash of its input and the input's size.
+Data to multipipe blocks are typically provided with a
+<em>dgsh</em>-aware version of <code>tee</code> and collected by
+<em>dgsh</em>-aware versions of programs such as
+<code>cat</code> and <code>paste</code>.
+</dd>
+
+<dt>Stored values</dt> <dd>offer a convenient way for communicating
+computed values between arbitrary processes on the graph.
+They allow the storage of a data stream's
+last record into a named buffer.
+This record can be later retrieved asynchronously by one or more readers.
+Data in a stored value can be piped into a process or out of it, or it can be read
+using the shell's command output substitution syntax.
+Stored values are implemented internally through Unix-domain sockets,
+a background-running store program, <code>dgsh-writeval</code>, and
+a reader program, <code>dgsh-readval</code>.
+The behavior of a stored value's IO can be modified by adding flags to
+<code>dgsh-writeval</code> and <code>dgsh-readval</code>.
+</dd>
+</dl>
+</section>
+
+<section id="syntax"> <!-- {{{2 -->
+<h2>Syntax</h2>
+<p>
+A <em>dgsh</em> script follows the syntax of a <em>bash</em>(1) shell
+script with the addition of <em>multipipe</em> blocks.
+A multipipe block contains one or more <em>dgsh</em> simple commands,
+other multipipe blocks, or pipelines of the previous two types of commands.
+The commands in a multipipe block
+are executed asynchronously (in parallel, in the background).
+Data may be redirected or piped into and out of a multipipe block.
+With multipipe blocks <em>dgsh</em> scripts form directed acyclic process graphs.
+It follows from the above description that
+multipipe blocks can be recursively composed.
+</p>
+
+<p>
+As a simple example consider running the following command
+directly within <em>dgsh</em>
+</p>
+<pre class="prettyprint lang-bash">
+{{ echo hello & echo world & }} | paste
+</pre>
+<p>
+or by invoking <code>dgsh</code> with the command as an argument.
+</p>
+<pre class="prettyprint lang-bash">
+dgsh -c '{{ echo hello & echo world & }} | paste'
+</pre>
+<p>
+The command will run <em>paste</em> with input from the two
+<em>echo</em> processes to output <code>hello world</code>.
+This is equivalent to running the following <em>bash</em> command,
+but with the flow of data appearing in the natural left-to-right order.
+</p>
+<pre class="prettyprint lang-bash">
+paste <(echo hello) <(echo world)
+</pre>
+
+<p>
+In the following larger example, which implements a directory listing similar
+to that of the Windows <em>DIR</em> command,
+the output of <em>ls</em> is distributed to
+six commands:
+<em>awk</em>, which sums the number of bytes and passes the
+result to the <em>tr</em> command that deletes
+newline characters,
+<em>wc</em>, which counts the number of files,
+<em>awk</em>, which counts the number of bytes,
+<em>grep</em>, which counts the number of directories and passes the
+result to the <em>tr</em> command that deletes newline characters,
+three <code>echo</code> commands, which provide the headers
+of the data output by the commands described above.
+All six commands pass their output
+to the <code>cat</code> command, which gathers their outputs
+in order.
+</p>
+
+<pre class="prettyprint lang-bash">
+FREE=$(df -h . | awk '!/Use%/{print $4}')
+
+ls -n |
+tee |
+{{
+        # Reorder fields in DIR-like way
+        awk '!/^total/ {print $6, $7, $8, $1, sprintf("%8d", $5), $9}'
+
+        # Count number of files
+        wc -l | tr -d \\n
+
+        # Print label for number of files
+        echo -n ' File(s) '
+
+        # Tally number of bytes
+        awk '{s += $5} END {printf("%d bytes\n", s)}'
+
+        # Count number of directories
+        grep -c '^d' | tr -d \\n
+
+        # Print label for number of dirs and calculate free bytes
+        echo " Dir(s) $FREE bytes free"
+}} |
+cat
+</pre>
+
+<p>
+Formally, <em>dgsh</em> extends the syntax of the (modified) Unix Bourne-shell
+when <code>bash</code> provided with the <code>--dgsh</code> argument
+as follows.
+</p>
+
+<pre class="prettyprint">
+<!-- #!sh web/format-syntax.sh -->
+</pre>
+</section> <!-- syntax -->
+
+<section id="tools"> <!-- {{{2 -->
+<h2>Adapted tools</h2>
+<p>
+A number of Unix tools have been adapted to support multiple inputs
+and outputs to match their natural capabilities.
+This echoes a similar adaptation that was performed in the early
+1970s when Unix and the shell got pipes and the pipeline syntax.
+Many programs that worked with files were adjusted to work as filters.
+The number of input and output channels of <em>dgsh</em>-compatible commands are
+as follows, based on the supplied command-line arguments.
+</p>
+<p>
+<table>
+	<tr>
+		<th>Tool</th>
+		<th>Inputs</th>
+		<th>Outputs</th>
+		<th>Notes</th>
+	</tr>
+	<tr>
+		<td>cat (<em>dgsh-tee</em>)</td>
+		<td>0&mdash;N</td>
+		<td>0&mdash;M</td>
+		<td>No options are supported</td>
+	</tr>
+	<tr>
+		<td>cmp</td>
+		<td>0&mdash;2</td>
+		<td>0&mdash;1</td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>comm</td>
+		<td>0&mdash;2</td>
+		<td>0&mdash;3</td>
+		<td>Output streams in order: lines only in first file, lines only in second one, and lines in both files</td>
+	</tr>
+	<tr>
+		<td>cut</td>
+		<td>0&mdash;1</td>
+		<td>1&mdash;N</td>
+		<td>With <code>--multistream</code> output each range into a different stream</td>
+	</tr>
+	<tr>
+		<td>diff</td>
+		<td>0&mdash;N</td>
+		<td>1</td>
+		<td>Typically two inputs. Compare an arbitrary number of input streams with the <code>--from-file</code> or <code>--to-file</code> options</td>
+	</tr>
+	<tr>
+		<td>diff3</td>
+		<td>0&mdash;3</td>
+		<td>1</td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>grep</td>
+		<td>0&mdash;2</td>
+		<td>0&mdash;4</td>
+		<td>Available output streams (via arguments): matching files, non-matching files, matching lines, and non-matching lines</td>
+	</tr>
+	<tr>
+		<td>join</td>
+		<td>0&mdash;2</td>
+		<td>1</td>
+		<td></td>
+	</tr>
+	<tr>
+		<td>paste</td>
+		<td>0&mdash;N</td>
+		<td>1</td>
+		<td>Paste N input streams</td>
+	</tr>
+	<tr>
+		<td>perm</td>
+		<td>1&mdash;N</td>
+		<td>1&mdash;N</td>
+		<td>Rearrange the order of N input streams</td>
+	</tr>
+	<tr>
+		<td>sort</td>
+		<td>0&mdash;N</td>
+		<td>0&mdash;1</td>
+		<td>With the <code>-m</code> option, merge sort N input streams</td>
+	</tr>
+	<tr>
+		<td>tee (<em>dgsh-tee</em>)</td>
+		<td>0&mdash;N</td>
+		<td>0&mdash;M</td>
+		<td>Only the <code>-a</code> option is supported</td>
+	</tr>
+	<tr>
+		<td>dgsh-readval</td>
+		<td>0</td>
+		<td>1</td>
+		<td>Read a value from a socket</td>
+	</tr>
+	<tr>
+		<td>dgsh-wrap</td>
+		<td>0&mdash;N</td>
+		<td>0&mdash;1</td>
+		<td>Wrap non-dgsh commands and negotiate on their behalf</td>
+	</tr>
+	<tr>
+		<td>dgsh-writeval</td>
+		<td>1</td>
+		<td>0</td>
+		<td>Write a value to a socket</td>
+	</tr>
+</table>
+</p>
+<p>
+In addition, POSIX user commands that receive no input
+or only generate no output, when executed in a <em>dgsh</em> context
+are wrapped to specify the corresponding input or output capability.
+For example, an <code>echo</code> command in a multipipe block
+will appear to receive no input, but will provide one output stream.
+By default <code>dgsh</code> automatically wraps all other
+commands as filters.
+<dl>
+<dt> Input-only </dt><dd>
+<!-- #!sed -n '/^m /{;s/. //;s/[ \t].*//;s/$/,/;p;}' unix-tools/wrapped-commands-posix | sed '$s/,/./' -->
+</dd>
+<dt> Output-only </dt><dd> </dd>
+<!-- #!sed -n '/^d /{;s/. //;s/[ \t].*//;s/$/,/;p;}' unix-tools/wrapped-commands-posix | sed '$s/,/./' -->
+</dl>
+<dt> No input and output </dt><dd> </dd>
+<!-- #!sed -n '/^dm /{;s/. //;s/[ \t].*//;s/$/,/;p;}' unix-tools/wrapped-commands-posix | sed '$s/,/./' -->
+</dl>
+</p>
+<p>
+Finally, note that any <em>dgsh</em> script will accept and generate
+the number of inputs and outputs associated with the commands or
+multipipe blocks at its two endpoints.
+</p>
+</section> <!-- Adapted tools -->
+
+
+<!-- Downloading and installation {{{1
+================================================== -->
+<section id="download">
+  <div class="page-header">
+    <h1>Downloading and installation</h1>
+  </div>
+
+<p>
+The <em>dgsh</em> suite has been tested under
+Debian and Ubuntu Linux, FreeBSD, and Mac OS X.
+A Cygwin port is underway.
+</p>
+
+<p>
+An installation of <a href="http://www.graphviz.org/">GraphViz</a>
+will allow you to visualize the <em>dgsh</em> graphs that you specify
+in your programs.
+</p>
+
+    <section id="debian"> <!-- {{{2 -->
+    <h2>Debian and Ubuntu GNU/Linux</h2>
+    <section>
+    <h3>Prerequisites</h3>
+<p>
+To compile and run <em>dgsh</em> you will need to have the following commands
+installed on your system:
+<pre class="prettyprint lang-bash">
+<!-- #!sed -n -e '/\# For installation/{n;s/sudo apt-get install -y //p}' .travis/linux-ubuntu-trusty.install.sh -->
+git xz-utils gettext
+</pre>
+
+To test <em>dgsh</em> you will need to have the following commands
+installed in your system:
+<pre class="prettyprint lang-bash">
+<!-- #!sed -n -e '/\# For testing/{n;s/sudo apt-get install -y //p}' .travis/linux-ubuntu-trusty.install.sh -->
+curl bzip2
+</pre>
+</p>
+    <h3>Installation steps</h3>
+<p>
+Go through the following steps.
+<ol>
+<li>
+Recursively clone the project's source code through its
+<a href="https://github.com/dspinellis/dgsh">GitHub page</a>.
+<pre class="prettyprint lang-bash">
+git clone --recursive https://github.com/dspinellis/dgsh.git
+</pre>
+</li>
+<li>
+Configure <em>bash</em> and the Unix tools adapted for <em>dgsh</em>.
+<pre class="prettyprint lang-bash">
+make config
+</pre>
+</li>
+<li>
+Compile all programs.
+<pre class="prettyprint lang-bash">
+make
+</pre>
+</li>
+<li>
+Install.
+<pre class="prettyprint lang-bash">
+sudo make install
+</pre>
+</li>
+</ol>
+</p>
+<p>
+By default, the program and its documentation are installed under
+<code>/usr/local</code>.
+You can modify this by setting the <code>PREFIX</code> variable
+in the `config` step, for example:
+<pre class="prettyprint lang-bash">
+make PREFIX=$HOME config
+make
+make install
+</pre>
+</p>
+
+    <h3>Testing</h3>
+<p>
+
+Issue the following command.
+<pre class="prettyprint lang-bash">
+make test
+</pre>
+</p>
+
+    </section>
+    <section id="freebsd"> <!-- {{{2 -->
+    <h2>FreeBSD</h2>
+    <section>
+    <h3>Prerequisites</h3>
+<p>
+To compile and run <em>dgsh</em> you will need to have the following packages
+installed in your system:
+<pre class="prettyprint lang-bash">
+devel/automake
+devel/bison
+devel/check
+devel/git
+devel/gmake
+devel/gperf
+misc/help2man
+print/texinfo
+shells/bash
+</pre>
+
+To test <em>dgsh</em> you will need to have the following ports
+installed on your system:
+<pre class="prettyprint lang-bash">
+archivers/bzip2
+ftp/curl
+</pre>
+</p>
+    <h3>Installation steps</h3>
+<p>
+Go through the following steps.
+<ol>
+<li>
+Recursively clone the project's source code through its
+<a href="https://github.com/dspinellis/dgsh">GitHub page</a>.
+<pre class="prettyprint lang-bash">
+git clone --recursive https://github.com/dspinellis/dgsh.git
+</pre>
+</li>
+<li>
+Configure <em>bash</em> and the Unix tools adapted for <em>dgsh</em>.
+<pre class="prettyprint lang-bash">
+gmake config
+</pre>
+</li>
+<li>
+Compile all programs.
+<pre class="prettyprint lang-bash">
+gmake
+</pre>
+</li>
+<li>
+Install.
+<pre class="prettyprint lang-bash">
+sudo gmake install
+</pre>
+</li>
+</ol>
+</p>
+<p>
+By default, the program and its documentation are installed under
+<code>/usr/local</code>.
+You can modify this by setting the <code>PREFIX</code> variable
+in the `config` step, for example:
+<pre class="prettyprint lang-bash">
+gmake PREFIX=$HOME config
+gmake
+gmake install
+</pre>
+</p>
+
+    <h3>Testing</h3>
+<p>
+
+Issue the following command.
+<pre class="prettyprint lang-bash">
+gmake test
+</pre>
+</p>
+
+    </section>
+</section>
+</section>
+
+<!-- Reference {{{1
+================================================== -->
+<section id="reference">
+  <div class="page-header">
+    <h1>Reference documentation</h1>
+  </div>
+<p>
+These are the manual pages for <em>dgsh</em>, the associated helper programs
+and the API
+in formats suitable for browsing and printing.
+The commands are listed in the order of usefulness in everyday scenarios.
+</p>
+<dl >
+<dt> dgsh </dt><dd> directed graph shell <a href="dgsh.html">HTML</a>, <a href="dgsh.pdf">PDF</a></dd>
+<dt> dgsh-tee </dt><dd> buffer and copy or scatter standard input to one or more sinks <a href="dgsh-tee.html">HTML</a>, <a href="dgsh-tee.pdf">PDF</a></dd>
+<dt> dgsh-wrap </dt><dd> allow any filter program to participate in an dgsh pipeline <a href="dgsh-wrap.html">HTML</a>, <a href="dgsh-wrap.pdf">PDF</a></dd>
+<dt> dgsh-writeval </dt><dd> write values to a data store <a href="dgsh-writeval.html">HTML</a>, <a href="dgsh-writeval.pdf">PDF</a></dd>
+<dt> dgsh-readval </dt><dd> data store client <a href="dgsh-readval.html">HTML</a>, <a href="dgsh-readval.pdf">PDF</a></dd>
+<dt> dgsh-monitor </dt><dd> monitor data on a pipe <a href="dgsh-monitor.html">HTML</a>, <a href="dgsh-monitor.pdf">PDF</a></dd>
+<dt> dgsh-parallel </dt><dd> create a semi-homogeneous dgsh parallel processing block <a href="dgsh-parallel.html">HTML</a>, <a href="dgsh-parallel.pdf">PDF</a></dd>
+<dt> perm </dt><dd> permute inputs to outputs <a href="perm.html">HTML</a>, <a href="perm.pdf">PDF</a></dd>
+<dt> dgsh-httpval </dt><dd> provide data store values through HTTP <a href="dgsh-httpval.html">HTML</a>, <a href="dgsh-httpval.pdf">PDF</a></dd>
+<dt> dgsh-merge-sum </dt><dd> merge key value pairs, summing the values <a href="dgsh-merge-sum.html">HTML</a>, <a href="dgsh-merge-sum.pdf">PDF</a></dd>
+<dt> dgsh-conc </dt><dd> input or output pipe concentrator for <em>dgsh</em> negotiation (used internally) <a href="dgsh-conc.html">HTML</a>, <a href="dgsh-conc.pdf">PDF</a></dd>
+<dt> dgsh-enumerate </dt><dd> enumerate an arbitrary number of output channels (demonstration and <a href="http://istlab.dmst.aueb.gr/~dds/dgsh-egg.sh" style="color:inherit; text-decoration:none;">debugging</a> tool) <a href="dgsh-enumerate.html">HTML</a>, <a href="dgsh-enumerate.pdf">PDF</a></dd>
+<dt> dgsh_negotiate </dt><dd> API for <em>dgsh</em>-compatible
+programs to specify and obtain dgsh I/O file descriptors
+<a href="dgsh_negotiate.html">HTML</a>, <a href="dgsh_negotiate.pdf">PDF</a></dd>
+</dl>
+</section>
+
+
+<!--</th>
+<th>Examples</th>
+<th>{{{1
+==================================================</th>
+<th>-->
+<section id="examples">
+  <div class="page-header">
+    <h1>Examples</h1>
+  </div>
+
+<!-- #!sh web/format-eg.sh -->
+
+</section> <!-- Examples -->
+
+</div> <!-- span8 -->
+</div> <!-- row -->
+
+<!-- Bootstrap -->
+<script src="https://code.jquery.com/jquery.js"></script>
+<script src="../../a/bootstrap/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../../a/prettify/prettify.js"></script>
+
+<script>
+    $(document).ready(function() {
+	prettyPrint();
+    });
+</script>
+
+<div class="license">
+<!--Creative Commons License--><a rel="license" href="http://creativecommons.org/licenses/by-sa/3.0/gr/deed.en">
+<img alt="Creative Commons License" src="https://creativecommons.org/images/public/somerights20.png"/></a>
+Unless otherwise expressly stated, all original material on this page
+created by Diomidis Spinellis is licensed under a
+<a rel="license" href="http://creativecommons.org/licenses/by-sa/3.0/gr/deed.en">Creative Commons Attribution-Share Alike 3.0 Greece License</a>.
+</div>
+
+</body>
+</html>
